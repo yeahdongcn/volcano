@@ -39,6 +39,7 @@ import (
 	"volcano.sh/volcano/pkg/scheduler/framework"
 	"volcano.sh/volcano/pkg/scheduler/plugins/drf"
 	"volcano.sh/volcano/pkg/scheduler/plugins/gang"
+	"volcano.sh/volcano/pkg/scheduler/plugins/networktopology"
 	"volcano.sh/volcano/pkg/scheduler/plugins/nodeorder"
 	"volcano.sh/volcano/pkg/scheduler/plugins/predicates"
 	"volcano.sh/volcano/pkg/scheduler/plugins/priority"
@@ -48,11 +49,32 @@ import (
 )
 
 func TestAllocate(t *testing.T) {
+	ntpPods := []*v1.Pod{}
+	ntpNodes := []*v1.Node{}
+	for i := 1; i < 4; i++ {
+		pod := util.BuildPod(
+			"c1", fmt.Sprintf("p%d", i), "", v1.PodPending,
+			api.BuildResourceList("1", "1G", []api.ScalarResource{{Name: "mthreads.com/gpu", Value: "1"}}...),
+			"pg1", make(map[string]string), make(map[string]string))
+		ntpPods = append(ntpPods, pod)
+	}
+	for i := 0; i < 8; i++ {
+		if i == 2 || i == 3 {
+			continue
+		}
+		node := util.BuildNode(
+			fmt.Sprintf("tux%d", i),
+			api.BuildResourceList("2", "4Gi", []api.ScalarResource{{Name: "pods", Value: "10"}, {Name: "mthreads.com/gpu", Value: "1"}}...),
+			make(map[string]string))
+		ntpNodes = append(ntpNodes, node)
+	}
+
 	plugins := map[string]framework.PluginBuilder{
-		drf.PluginName:        drf.New,
-		proportion.PluginName: proportion.New,
-		predicates.PluginName: predicates.New,
-		nodeorder.PluginName:  nodeorder.New,
+		drf.PluginName:             drf.New,
+		proportion.PluginName:      proportion.New,
+		predicates.PluginName:      predicates.New,
+		nodeorder.PluginName:       nodeorder.New,
+		networktopology.PluginName: networktopology.New,
 	}
 	options.Default()
 	tests := []uthelper.TestCommonStruct{
@@ -134,6 +156,23 @@ func TestAllocate(t *testing.T) {
 			},
 			ExpectBindsNum: 1,
 		},
+		{
+			Name: "one training job with network topology aware",
+			PodGroups: []*schedulingv1.PodGroup{
+				util.BuildPodGroup("pg1", "c1", "c1", 0, nil, schedulingv1.PodGroupInqueue),
+			},
+			Pods:  ntpPods,
+			Nodes: ntpNodes,
+			Queues: []*schedulingv1.Queue{
+				util.BuildQueue("c1", 1, nil),
+			},
+			ExpectBindMap: map[string]string{
+				"c1/p1": "tux4",
+				"c1/p2": "tux5",
+				"c1/p3": "tux6",
+			},
+			ExpectBindsNum: 3,
+		},
 	}
 
 	trueValue := true
@@ -159,11 +198,20 @@ func TestAllocate(t *testing.T) {
 					Name:             nodeorder.PluginName,
 					EnabledNodeOrder: &trueValue,
 				},
+				{
+					Name:             networktopology.PluginName,
+					EnabledNodeOrder: &trueValue,
+					EnabledBestNode:  &trueValue,
+					Arguments: map[string]interface{}{
+						networktopology.TopologyConfigPath: "../../plugins/networktopology/testdata/topology.conf",
+					},
+				},
 			},
 		},
 	}
 
 	for i, test := range tests {
+
 		t.Run(test.Name, func(t *testing.T) {
 			test.Plugins = plugins
 			test.RegisterSession(tiers, nil)
