@@ -37,7 +37,7 @@ import (
 	volumescheduling "volcano.sh/volcano/pkg/scheduler/capabilities/volumebinding"
 )
 
-// BuildNode builts node object
+// BuildNode builds node object
 func BuildNode(name string, alloc v1.ResourceList, labels map[string]string) *v1.Node {
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -81,7 +81,7 @@ func BuildPod(namespace, name, nodeName string, p v1.PodPhase, req v1.ResourceLi
 	}
 }
 
-// BuildPodWithPVC builts Pod object with pvc volume
+// BuildPodWithPVC builds Pod object with pvc volume
 func BuildPodWithPVC(namespace, name, nodename string, p v1.PodPhase, req v1.ResourceList, pvc *v1.PersistentVolumeClaim, groupName string, labels map[string]string, selector map[string]string) *v1.Pod {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

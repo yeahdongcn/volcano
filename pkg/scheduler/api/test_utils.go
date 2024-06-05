@@ -90,7 +90,7 @@ type ScalarResource struct {
 	Value string
 }
 
-// BuildResourceList builts resource list object
+// BuildResourceList builds resource list object
 func BuildResourceList(cpu string, memory string, scalarResources ...ScalarResource) v1.ResourceList {
 	resourceList := v1.ResourceList{
 		v1.ResourceCPU:    resource.MustParse(cpu),
@@ -103,7 +103,7 @@ func BuildResourceList(cpu string, memory string, scalarResources ...ScalarResou
 	return resourceList
 }
 
-// BuildResourceListWithGPU builts resource list with GPU
+// BuildResourceListWithGPU builds resource list with GPU
 func BuildResourceListWithGPU(cpu string, memory string, GPU string, scalarResources ...ScalarResource) v1.ResourceList {
 	resourceList := v1.ResourceList{
 		v1.ResourceCPU:    resource.MustParse(cpu),
