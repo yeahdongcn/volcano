@@ -106,17 +106,16 @@ func (ntp *networkTopologyPlugin) OnSessionOpen(ssn *framework.Session) {
 
 		for score, nodes := range nodeScores {
 			if score >= networkExtraScore {
-				unsorted := []string{}
-				sorted := []string{}
-
+				selectdNodes := []string{}
 				for _, node := range nodes {
-					unsorted = append(unsorted, node.Name)
+					selectdNodes = append(selectdNodes, node.Name)
 				}
-				copy(sorted, unsorted)
-				sort.Strings(sorted)
-
-				nodeName := sorted[0]
-				index, _ := indexOf(nodeName, unsorted)
+				sort.Strings(selectdNodes)
+				if len(selectdNodes) == 0 {
+					return nil
+				}
+				nodeName := selectdNodes[0]
+				index, _ := indexOf(nodeName, selectdNodes)
 				return nodes[index]
 			}
 		}
