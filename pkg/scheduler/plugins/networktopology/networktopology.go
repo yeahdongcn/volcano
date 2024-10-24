@@ -1,8 +1,6 @@
 package networktopology
 
 import (
-	"sort"
-
 	"github.com/yeahdongcn/topology/pkg/slurm/topology/tree"
 	"k8s.io/klog/v2"
 
@@ -18,7 +16,9 @@ const (
 	TopologyConfigPath = "topology-config-path"
 
 	// networkExtraScore is the score added to nodes that are selected by the network topology plugin
-	networkExtraScore = 2000
+	networkExtraScore = 1
+
+	PluginWeight = "network-topology.weight"
 )
 
 type result struct {
@@ -30,6 +30,8 @@ type networkTopologyPlugin struct {
 	// Arguments given for the plugin
 	pluginArguments framework.Arguments
 
+	weight int
+
 	// cacheResults is a map of job UID to the result of the network topology plugin
 	cacheResults map[string]result
 }
@@ -38,6 +40,7 @@ type networkTopologyPlugin struct {
 func New(arguments framework.Arguments) framework.Plugin {
 	return &networkTopologyPlugin{
 		pluginArguments: arguments,
+		weight:          calculateWeight(arguments),
 		cacheResults:    make(map[string]result),
 	}
 }
@@ -55,7 +58,7 @@ func (ntp *networkTopologyPlugin) OnSessionOpen(ssn *framework.Session) {
 		jobInfo := ssn.Jobs[task.Job]
 		if result, ok := ntp.cacheResults[string(jobInfo.UID)]; ok {
 			for _, node := range result.selectedNodes {
-				nodeScores[node] = networkExtraScore
+				nodeScores[node] = float64(networkExtraScore * ntp.weight)
 			}
 			return nodeScores, nil
 		}
@@ -81,6 +84,13 @@ func (ntp *networkTopologyPlugin) OnSessionOpen(ssn *framework.Session) {
 		for _, node := range nodeInfo {
 			availableNodes = append(availableNodes, node.Name)
 		}
+
+		klog.V(3).Infof("task: %v/%v, AvailableNodes: %v, miniMember: %v", task.Namespace, task.Name, availableNodes, miniMember)
+		if len(availableNodes) < int(miniMember) {
+			klog.Errorf("availableNodes count less than miniMember")
+			return nodeScores, err
+		}
+
 		requiredNodes := make([]string, 0)
 		selectedNodes, leafSwitchCount, err := tree.EvalNodesTree(availableNodes, requiredNodes, miniMember)
 		if err != nil {
@@ -92,47 +102,32 @@ func (ntp *networkTopologyPlugin) OnSessionOpen(ssn *framework.Session) {
 		ntp.cacheResults[string(jobInfo.UID)] = result{selectedNodes, leafSwitchCount}
 
 		for _, node := range selectedNodes {
-			nodeScores[node] = networkExtraScore
+			nodeScores[node] = float64(networkExtraScore * ntp.weight)
 		}
 
 		return nodeScores, nil
 	}
 	ssn.AddBatchNodeOrderFn(ntp.Name(), batchNodeOrderFn)
-
-	best := func(task *api.TaskInfo, nodeScores map[float64][]*api.NodeInfo) *api.NodeInfo {
-		if len(nodeScores) == 0 {
-			return nil
-		}
-
-		for score, nodes := range nodeScores {
-			if score >= networkExtraScore {
-				unsorted := []string{}
-				sorted := []string{}
-
-				for _, node := range nodes {
-					unsorted = append(unsorted, node.Name)
-				}
-				copy(sorted, unsorted)
-				sort.Strings(sorted)
-
-				nodeName := sorted[0]
-				index, _ := indexOf(nodeName, unsorted)
-				return nodes[index]
-			}
-		}
-		return nil
-	}
-	ssn.AddBestNodeFn(ntp.Name(), best)
 }
 
 func (ntp *networkTopologyPlugin) OnSessionClose(ssn *framework.Session) {
 }
 
-func indexOf(e string, s []string) (int, bool) {
-	for i, v := range s {
-		if e == v {
-			return i, true
-		}
-	}
-	return -1, false
+func calculateWeight(args framework.Arguments) int {
+	/*
+	   User Should give networkTopologyWeight in this format(network-topology.weight).
+
+	   actions: "enqueue, reclaim, allocate, backfill, preempt"
+	   tiers:
+	   - plugins:
+	     - name: network-topology
+	       arguments:
+	         network-topology.weight: 10
+	*/
+	// Values are initialized to 1.
+	weight := 1
+
+	args.GetInt(&weight, PluginWeight)
+
+	return weight
 }
